@@ -164,13 +164,69 @@ func (c *Client) do(ctx context.Context, method, path string, body any, target a
 	return nil
 }
 
-// doWithJWT is like do but attaches a JWT token instead of a secret key.
-// Used for dashboard/control endpoints that require JWT auth
-// rather than secret key auth.
+// doWithJWT executes a request using a JWT token instead of the secret key.
+// Rather than mutating the client's secretKey (which is not thread-safe),
+// we build the request manually with the token injected directly.
+// This means concurrent requests, one using secretKey, one using JWT —
+// never race on the same field.
 func (c *Client) doWithJWT(ctx context.Context, method, path string, body any, target any, token string) error {
-	original := c.secretKey
-	c.secretKey = token
-	err := c.do(ctx, method, path, body, target)
-	c.secretKey = original
-	return err
+	var bodyReader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		bodyReader = bytes.NewBuffer(b)
+	}
+
+	url := fmt.Sprintf("%s%s", c.baseURL, path)
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	// Inject the JWT token directly, never touches c.secretKey.
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var envelope apiResponse
+	if err := json.Unmarshal(respBytes, &envelope); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if envelope.Status != "success" {
+		return &SDKError{
+			Code:       envelope.Code,
+			Message:    envelope.Message,
+			Fields:     envelope.Errors,
+			HTTPStatus: resp.StatusCode,
+		}
+	}
+
+	if target != nil && envelope.Data != nil {
+		dataBytes, err := json.Marshal(envelope.Data)
+		if err != nil {
+			return fmt.Errorf("failed to re-marshal data: %w", err)
+		}
+		if err := json.Unmarshal(dataBytes, target); err != nil {
+			return fmt.Errorf("failed to unmarshal data into target: %w", err)
+		}
+	}
+
+	return nil
 }
