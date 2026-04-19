@@ -312,3 +312,34 @@ type OTPLogList struct {
 	OTPLogs []OTPLog       `json:"otp_logs"`
 	Meta    PaginationMeta `json:"meta"`
 }
+
+// MerchantProfile is the full merchant profile returned by /merchant.
+type MerchantProfile struct {
+	ID           string    `json:"id"`
+	BusinessName string    `json:"business_name"`
+	Email        string    `json:"email"`
+	PublicKey    string    `json:"public_key"`
+	WebhookURL   string    `json:"webhook_url"`
+	IsActive     bool      `json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// UpdateProfileInput is the input for updating a merchant profile.
+type UpdateProfileInput struct {
+	BusinessName string `json:"business_name,omitempty"`
+	WebhookURL   string `json:"webhook_url,omitempty"`
+}
+
+// WebhookConfig holds the merchant's webhook configuration.
+type WebhookConfig struct {
+	WebhookURL string `json:"webhook_url"`
+	IsSet      bool   `json:"is_set"`
+}
+
+// WebhookTestResult is the result of a test webhook delivery.
+type WebhookTestResult struct {
+	WebhookURL string `json:"webhook_url"`
+	Success    bool   `json:"success"`
+	StatusCode int    `json:"status_code"`
+}

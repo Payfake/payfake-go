@@ -124,3 +124,46 @@ func (s *ControlService) GetOTPLogs(ctx context.Context, token string, reference
 	}
 	return out.OTPLogs, nil
 }
+
+// ListTransactions returns JWT-authenticated transaction list for the dashboard.
+// Unlike client.Transaction.List which requires a secret key, this uses
+// the dashboard JWT so the dashboard never needs to handle the secret key.
+func (s *ControlService) ListTransactions(
+	ctx context.Context,
+	token string,
+	page, perPage int,
+	status, search string,
+) (*TransactionList, error) {
+	path := fmt.Sprintf(
+		"/api/v1/control/transactions?page=%d&per_page=%d",
+		pageOrDefault(page), perPageOrDefault(perPage),
+	)
+	if status != "" {
+		path += "&status=" + status
+	}
+	if search != "" {
+		path += "&search=" + search
+	}
+	var out TransactionList
+	if err := s.client.doWithJWT(ctx, http.MethodGet, path, nil, &out, token); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListCustomers returns JWT-authenticated customer list for the dashboard.
+func (s *ControlService) ListCustomers(
+	ctx context.Context,
+	token string,
+	opts ListOptions,
+) (*CustomerList, error) {
+	path := fmt.Sprintf(
+		"/api/v1/control/customers?page=%d&per_page=%d",
+		pageOrDefault(opts.Page), perPageOrDefault(opts.PerPage),
+	)
+	var out CustomerList
+	if err := s.client.doWithJWT(ctx, http.MethodGet, path, nil, &out, token); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

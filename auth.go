@@ -56,3 +56,46 @@ func (s *AuthService) RegenerateKeys(ctx context.Context, token string) (*KeysRe
 	}
 	return &out, nil
 }
+
+// GetProfile fetches the merchant's full profile.
+// Requires JWT token from Login().
+func (s *AuthService) GetProfile(ctx context.Context, token string) (*MerchantProfile, error) {
+	var out MerchantProfile
+	if err := s.client.doWithJWT(ctx, http.MethodGet, "/api/v1/merchant", nil, &out, token); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateProfile updates the merchant's business name and/or webhook URL.
+func (s *AuthService) UpdateProfile(ctx context.Context, token string, input UpdateProfileInput) (*MerchantProfile, error) {
+	var out MerchantProfile
+	if err := s.client.doWithJWT(ctx, http.MethodPut, "/api/v1/merchant", input, &out, token); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetWebhookURL fetches the merchant's current webhook URL.
+func (s *AuthService) GetWebhookURL(ctx context.Context, token string) (*WebhookConfig, error) {
+	var out WebhookConfig
+	if err := s.client.doWithJWT(ctx, http.MethodGet, "/api/v1/merchant/webhook", nil, &out, token); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateWebhookURL sets the merchant's webhook URL.
+func (s *AuthService) UpdateWebhookURL(ctx context.Context, token, webhookURL string) error {
+	return s.client.doWithJWT(ctx, http.MethodPost, "/api/v1/merchant/webhook",
+		map[string]string{"webhook_url": webhookURL}, nil, token)
+}
+
+// TestWebhook fires a test webhook to the merchant's configured URL.
+func (s *AuthService) TestWebhook(ctx context.Context, token string) (*WebhookTestResult, error) {
+	var out WebhookTestResult
+	if err := s.client.doWithJWT(ctx, http.MethodPost, "/api/v1/merchant/webhook/test", nil, &out, token); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
