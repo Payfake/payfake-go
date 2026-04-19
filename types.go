@@ -240,3 +240,75 @@ type ListOptions struct {
 	Page    int
 	PerPage int
 }
+
+// Charge flow v0.2.0
+
+// SubmitPINInput is the input for submitting a card PIN.
+type SubmitPINInput struct {
+	Reference string `json:"reference"`
+	PIN       string `json:"pin"`
+}
+
+// SubmitOTPInput is the input for submitting an OTP.
+// Works for card, MoMo and bank flows.
+type SubmitOTPInput struct {
+	Reference string `json:"reference"`
+	OTP       string `json:"otp"`
+}
+
+// SubmitBirthdayInput is the input for submitting a date of birth.
+type SubmitBirthdayInput struct {
+	Reference string `json:"reference"`
+	// Birthday format: YYYY-MM-DD
+	Birthday string `json:"birthday"`
+}
+
+// SubmitAddressInput is the input for submitting a billing address.
+type SubmitAddressInput struct {
+	Reference string `json:"reference"`
+	Address   string `json:"address"`
+	City      string `json:"city"`
+	State     string `json:"state"`
+	ZipCode   string `json:"zip_code"`
+	Country   string `json:"country"`
+}
+
+// ResendOTPInput is the input for requesting a new OTP.
+type ResendOTPInput struct {
+	Reference string `json:"reference"`
+}
+
+// ChargeFlowResponse is returned by every charge step endpoint.
+// The checkout page reads Status to decide what to render next.
+type ChargeFlowResponse struct {
+	// Status tells the checkout page what step comes next.
+	// Possible values: send_pin, send_otp, send_birthday, send_address,
+	// open_url, pay_offline, success, failed
+	Status      string `json:"status"`
+	Reference   string `json:"reference"`
+	DisplayText string `json:"display_text"`
+	// ThreeDSURL is populated only when Status is "open_url".
+	// The checkout page navigates to this URL for 3DS verification.
+	ThreeDSURL  string      `json:"three_ds_url"`
+	Transaction Transaction `json:"transaction"`
+	Charge      ChargeData  `json:"charge"`
+}
+
+// OTPLog is a record of a generated OTP stored for developer inspection.
+type OTPLog struct {
+	ID         string    `json:"id"`
+	MerchantID string    `json:"merchant_id"`
+	Reference  string    `json:"reference"`
+	Channel    string    `json:"channel"`
+	OTPCode    string    `json:"otp_code"`
+	Step       string    `json:"step"`
+	Used       bool      `json:"used"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// OTPLogList is a paginated list of OTP logs.
+type OTPLogList struct {
+	OTPLogs []OTPLog       `json:"otp_logs"`
+	Meta    PaginationMeta `json:"meta"`
+}

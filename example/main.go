@@ -24,15 +24,15 @@ func main() {
 
 	// Try to register first
 	regResp, err := authClient.Auth.Register(ctx, payfake.RegisterInput{
-		BusinessName: "Acme Store",
-		Email:        "dev@acme.com",
+		BusinessName: "G_KANAD",
+		Email:        "gkanad@acme.com",
 		Password:     "secret123",
 	})
 	if err != nil {
 		// If email already taken, log in instead
 		if payfake.IsCode(err, payfake.CodeEmailTaken) {
 			loginResp, err := authClient.Auth.Login(ctx, payfake.LoginInput{
-				Email:    "dev@acme.com",
+				Email:    "gkanad@acme.com",
 				Password: "secret123",
 			})
 			if err != nil {
@@ -69,9 +69,10 @@ func main() {
 	// STEP 5: Initialize a transaction
 
 	tx, err := client.Transaction.Initialize(ctx, payfake.InitializeInput{
-		Email:    "customer@example.com",
-		Amount:   10000, // GHS 100.00 — amounts are in the smallest unit (pesewas)
-		Currency: "GHS",
+		Email:       "archergorden@gmail.com",
+		Amount:      10000, // GHS 100.00 — amounts are in the smallest unit (pesewas)
+		Currency:    "GHS",
+		CallbackURL: "http://localhost:5173",
 	})
 	if err != nil {
 		log.Fatalf("initialize failed: %v", err)
@@ -82,111 +83,172 @@ func main() {
 	fmt.Println("Access code:       ", tx.AccessCode)
 	fmt.Println("Authorization URL: ", tx.AuthorizationURL)
 
-	// STEP 6: Charge a card
+	if err != nil {
+		log.Fatalf("initialize failed: %v", err)
+	}
+	fmt.Println("Reference:", tx.Reference)
+	fmt.Println("Access code:", tx.AccessCode)
 
-	charge, err := client.Charge.Card(ctx, payfake.ChargeCardInput{
+	// Step 1 — initiate card charge
+	step1, err := client.Charge.Card(ctx, payfake.ChargeCardInput{
 		AccessCode: tx.AccessCode,
-		CardNumber: "4111111111111111",
+		CardNumber: "5061000000000000", // Verve — local card → send_pin
 		CardExpiry: "12/26",
 		CVV:        "123",
 		Email:      "customer@example.com",
 	})
 	if err != nil {
-		if payfake.IsCode(err, payfake.CodeChargeFailed) {
-			fmt.Printf("\nCharge failed: %v\n", err)
-		} else {
-			log.Fatalf("charge failed: %v", err)
-		}
-	} else {
-		fmt.Println("\nCharge status:", charge.Transaction.Status)
+		log.Fatalf("charge failed: %v", err)
 	}
+	fmt.Println("Step 1 status:", step1.Status) // "send_pin"
 
-	// STEP 7: Verify transaction
+	// Step 2 — submit PIN
+	step2, err := client.Charge.SubmitPIN(ctx, payfake.SubmitPINInput{
+		Reference: tx.Reference,
+		PIN:       "1234",
+	})
+	if err != nil {
+		log.Fatalf("submit PIN failed: %v", err)
+	}
+	fmt.Println("Step 2 status:", step2.Status) // "send_otp"
 
+	// Step 3 — get OTP from logs
+	otpLogs, err := client.Control.GetOTPLogs(ctx, token, tx.Reference)
+	if err != nil {
+		log.Fatalf("get OTP logs failed: %v", err)
+	}
+	if len(otpLogs) == 0 {
+		log.Fatal("no OTP logs found")
+	}
+	otp := otpLogs[0].OTPCode
+	fmt.Println("OTP from logs:", otp)
+
+	// Step 4 — submit OTP
+	step3, err := client.Charge.SubmitOTP(ctx, payfake.SubmitOTPInput{
+		Reference: tx.Reference,
+		OTP:       otp,
+	})
+	if err != nil {
+		log.Fatalf("submit OTP failed: %v", err)
+	}
+	fmt.Println("Step 3 status:", step3.Status) // "success"
+
+	// Verify
 	verified, err := client.Transaction.Verify(ctx, tx.Reference)
 	if err != nil {
 		log.Fatalf("verify failed: %v", err)
 	}
-	fmt.Println("Verified status:", verified.Status)
+	fmt.Println("Verified:", verified.Status)
+
+	// STEP 6: Charge a card
+
+	// charge, err := client.Charge.Card(ctx, payfake.ChargeCardInput{
+	// 	AccessCode: tx.AccessCode,
+	// 	CardNumber: "4111111111111111",
+	// 	CardExpiry: "12/26",
+	// 	CVV:        "123",
+	// 	Email:      "customer@example.com",
+	// })
+	// if err != nil {
+	// 	if payfake.IsCode(err, payfake.CodeChargeFailed) {
+	// 		fmt.Printf("\nCharge failed: %v\n", err)
+	// 	} else {
+	// 		log.Fatalf("charge failed: %v", err)
+	// 	}
+	// } else {
+	// 	fmt.Println("\nCharge status:", charge.Transaction.Status)
+	// }
+
+	// // STEP 7: Verify transaction
+
+	// verified, err := client.Transaction.Verify(ctx, tx.Reference)
+	// if err != nil {
+	// 	log.Fatalf("verify failed: %v", err)
+	// }
+	// fmt.Println("Verified status:", verified.Status)
 
 	// STEP 8: Mobile Money flow
 
-	tx2, err := client.Transaction.Initialize(ctx, payfake.InitializeInput{
-		Email:  "momo@example.com",
-		Amount: 5000,
-	})
-	if err != nil {
-		log.Fatalf("momo initialize failed: %v", err)
-	}
+	// tx2, err := client.Transaction.Initialize(ctx, payfake.InitializeInput{
+	// 	Email:  "momo@example.com",
+	// 	Amount: 5000,
+	// })
+	// if err != nil {
+	// 	log.Fatalf("momo initialize failed: %v", err)
+	// }
 
-	// Check the correct type name for mobile money
-	momo, err := client.Charge.MobileMoney(ctx, payfake.ChargeMomoInput{
-		AccessCode: tx2.AccessCode,
-		Phone:      "+233241234567",
-		Provider:   "mtn",
-		Email:      "momo@example.com",
-	})
-	if err != nil {
-		log.Fatalf("momo charge failed: %v", err)
-	}
-	fmt.Println("\nMoMo status:", momo.Transaction.Status)
+	fmt.Println("Transaction:\n", *tx)
 
-	// STEP 9: Control panel operations (using auth token, not secret key)
+	// 	// Check the correct type name for mobile money
+	// 	momo, err := client.Charge.MobileMoney(ctx, payfake.ChargeMomoInput{
+	// 		AccessCode: tx2.AccessCode,
+	// 		Phone:      "+233241234567",
+	// 		Provider:   "mtn",
+	// 		Email:      "momo@example.com",
+	// 	})
+	// 	if err != nil {
+	// 		log.Fatalf("momo charge failed: %v", err)
+	// 	}
+	// 	fmt.Println("\nMoMo status:", momo.Transaction.Status)
 
-	failureRate := 0.5
-	delayMs := 2000
-	scenario, err := authClient.Control.UpdateScenario(ctx, token, payfake.UpdateScenarioInput{
-		FailureRate: &failureRate,
-		DelayMS:     &delayMs, // Note: DelayMS not DelayMs
-	})
-	if err != nil {
-		log.Fatalf("scenario update failed: %v", err)
-	}
-	fmt.Printf("\nScenario updated, failure rate: %.2f\n", scenario.FailureRate)
+	// 	// STEP 9: Control panel operations (using auth token, not secret key)
 
-	// Force a specific transaction to fail
-	tx3, err := client.Transaction.Initialize(ctx, payfake.InitializeInput{
-		Email:  "force@example.com",
-		Amount: 2000,
-	})
-	if err != nil {
-		log.Fatalf("force transaction initialize failed: %v", err)
-	}
+	// 	failureRate := 0.5
+	// 	delayMs := 2000
+	// 	scenario, err := authClient.Control.UpdateScenario(ctx, token, payfake.UpdateScenarioInput{
+	// 		FailureRate: &failureRate,
+	// 		DelayMS:     &delayMs, // Note: DelayMS not DelayMs
+	// 	})
+	// 	if err != nil {
+	// 		log.Fatalf("scenario update failed: %v", err)
+	// 	}
+	// 	fmt.Printf("\nScenario updated, failure rate: %.2f\n", scenario.FailureRate)
 
-	status := "failed"
-	errorCode := "CHARGE_INSUFFICIENT_FUNDS"
-	forced, err := authClient.Control.ForceTransaction(ctx, token, tx3.Reference, payfake.ForceTransactionInput{
-		Status:    status,    // Not a pointer
-		ErrorCode: errorCode, // Not a pointer
-	})
-	if err != nil {
-		log.Fatalf("force transaction failed: %v", err)
-	}
-	fmt.Println("Forced status:", forced.Status)
+	// 	// Force a specific transaction to fail
+	// 	tx3, err := client.Transaction.Initialize(ctx, payfake.InitializeInput{
+	// 		Email:  "force@example.com",
+	// 		Amount: 2000,
+	// 	})
+	// 	if err != nil {
+	// 		log.Fatalf("force transaction initialize failed: %v", err)
+	// 	}
 
-	// Reset scenario
-	_, err = authClient.Control.ResetScenario(ctx, token)
-	if err != nil {
-		log.Fatalf("scenario reset failed: %v", err)
-	}
-	fmt.Println("Scenario reset")
+	// 	status := "failed"
+	// 	errorCode := "CHARGE_INSUFFICIENT_FUNDS"
+	// 	forced, err := authClient.Control.ForceTransaction(ctx, token, tx3.Reference, payfake.ForceTransactionInput{
+	// 		Status:    status,    // Not a pointer
+	// 		ErrorCode: errorCode, // Not a pointer
+	// 	})
+	// 	if err != nil {
+	// 		log.Fatalf("force transaction failed: %v", err)
+	// 	}
+	// 	fmt.Println("Forced status:", forced.Status)
 
-	// STEP 10: Get recent logs
+	// 	// Reset scenario
+	// 	_, err = authClient.Control.ResetScenario(ctx, token)
+	// 	if err != nil {
+	// 		log.Fatalf("scenario reset failed: %v", err)
+	// 	}
+	// 	fmt.Println("Scenario reset")
 
-	logs, err := authClient.Control.GetLogs(ctx, token, payfake.ListOptions{
-		Page:    1,
-		PerPage: 5,
-	})
-	if err != nil {
-		if payfake.IsCode(err, "LOGS_EMPTY") {
-			fmt.Println("\nNo logs found yet (expected for new merchant)")
-		} else {
-			log.Fatalf("get logs failed: %v", err)
-		}
-	} else {
-		fmt.Printf("\nRecent requests: %d\n", len(logs))
-		for _, log := range logs {
-			fmt.Printf("  %s %s -> %d\n", log.Method, log.Path, log.StatusCode)
-		}
-	}
+	// 	// STEP 10: Get recent logs
+
+	//	logs, err := authClient.Control.GetLogs(ctx, token, payfake.ListOptions{
+	//		Page:    1,
+	//		PerPage: 5,
+	//	})
+	//
+	//	if err != nil {
+	//		if payfake.IsCode(err, "LOGS_EMPTY") {
+	//			fmt.Println("\nNo logs found yet (expected for new merchant)")
+	//		} else {
+	//			log.Fatalf("get logs failed: %v", err)
+	//		}
+	//	} else {
+	//
+	//		fmt.Printf("\nRecent requests: %d\n", len(logs))
+	//		for _, log := range logs {
+	//			fmt.Printf("  %s %s -> %d\n", log.Method, log.Path, log.StatusCode)
+	//		}
+	//	}
 }

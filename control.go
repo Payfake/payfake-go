@@ -101,3 +101,26 @@ func (s *ControlService) GetLogs(ctx context.Context, token string, opts ListOpt
 func (s *ControlService) ClearLogs(ctx context.Context, token string) error {
 	return s.client.doWithJWT(ctx, http.MethodDelete, "/api/v1/control/logs", nil, nil, token)
 }
+
+// GetOTPLogs returns OTP codes generated during charge flows.
+// Use reference to filter for a specific transaction.
+// This is the primary way to get OTPs during testing without a real phone.
+//
+// Example:
+//
+//	logs, err := client.Control.GetOTPLogs(ctx, token, "TXN_xxx")
+//	fmt.Println("OTP:", logs[0].OTPCode)
+func (s *ControlService) GetOTPLogs(ctx context.Context, token string, reference string) ([]OTPLog, error) {
+	path := "/api/v1/control/otp-logs"
+	if reference != "" {
+		path += "?reference=" + reference
+	}
+
+	var out struct {
+		OTPLogs []OTPLog `json:"otp_logs"`
+	}
+	if err := s.client.doWithJWT(ctx, http.MethodGet, path, nil, &out, token); err != nil {
+		return nil, err
+	}
+	return out.OTPLogs, nil
+}
