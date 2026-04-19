@@ -57,3 +57,43 @@ func (s *TransactionService) Refund(ctx context.Context, id string) (*Transactio
 	}
 	return &out, nil
 }
+
+// PublicFetchTransaction loads transaction details for the checkout page.
+// No secret key required, authenticated via access code in the URL.
+// Returns amount, currency, merchant branding, customer email and
+// current charge flow status. Called on checkout page mount.
+//
+// This is what the React checkout app calls when it opens:
+//
+//	GET /api/v1/public/transaction/:access_code
+func (s *TransactionService) PublicFetch(ctx context.Context, accessCode string) (*PublicTransactionResponse, error) {
+	var out PublicTransactionResponse
+	if err := s.client.do(ctx, http.MethodGet,
+		fmt.Sprintf("/api/v1/public/transaction/%s", accessCode),
+		nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// PublicVerify polls the current status of a transaction by reference.
+// No secret key required, used by the checkout page during MoMo
+// pay_offline state to know when the customer has approved or declined.
+// Poll every 3 seconds, stop when status is "success" or "failed".
+//
+//	for {
+//	    result, _ := client.Transaction.PublicVerify(ctx, reference)
+//	    if result.Status == "success" || result.Status == "failed" {
+//	        break
+//	    }
+//	    time.Sleep(3 * time.Second)
+//	}
+func (s *TransactionService) PublicVerify(ctx context.Context, reference string) (*PublicVerifyResponse, error) {
+	var out PublicVerifyResponse
+	if err := s.client.do(ctx, http.MethodGet,
+		fmt.Sprintf("/api/v1/public/transaction/verify/%s", reference),
+		nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

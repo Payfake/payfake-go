@@ -343,3 +343,49 @@ type WebhookTestResult struct {
 	Success    bool   `json:"success"`
 	StatusCode int    `json:"status_code"`
 }
+
+// PublicTransactionResponse is returned by GET /public/transaction/:access_code.
+// Contains everything the checkout page needs to render — amount, merchant
+// branding, customer email pre-fill, and current charge flow status.
+type PublicTransactionResponse struct {
+	Amount      int64  `json:"amount"`
+	Currency    string `json:"currency"`
+	Status      string `json:"status"`
+	Reference   string `json:"reference"`
+	CallbackURL string `json:"callback_url"`
+	AccessCode  string `json:"access_code"`
+	// Message explains the current status in human-readable terms.
+	// e.g. "Payment already completed", "This payment link has expired"
+	Message  string `json:"message"`
+	Merchant struct {
+		BusinessName string `json:"business_name"`
+		PublicKey    string `json:"public_key"`
+	} `json:"merchant"`
+	Customer struct {
+		Email     string `json:"email"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+	} `json:"customer"`
+	// Charge holds the current flow status — critical for MoMo polling.
+	// Check Charge.FlowStatus to know where in the flow the charge is.
+	Charge *PublicChargeStatus `json:"charge"`
+}
+
+// PublicChargeStatus is the charge state embedded in the public transaction response.
+type PublicChargeStatus struct {
+	FlowStatus string `json:"flow_status"`
+	Status     string `json:"status"`
+	ErrorCode  string `json:"error_code"`
+	Channel    string `json:"channel"`
+}
+
+// PublicVerifyResponse is returned by GET /public/transaction/verify/:reference.
+// Used for MoMo polling — check Status and Charge.FlowStatus each tick.
+type PublicVerifyResponse struct {
+	Status    string              `json:"status"`
+	Reference string              `json:"reference"`
+	Amount    int64               `json:"amount"`
+	Currency  string              `json:"currency"`
+	PaidAt    *time.Time          `json:"paid_at"`
+	Charge    *PublicChargeStatus `json:"charge"`
+}
