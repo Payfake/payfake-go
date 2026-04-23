@@ -6,54 +6,57 @@ import (
 	"net/http"
 )
 
-type CustomerService struct {
+// CustomerNamespace wraps /customer endpoints.
+// These match https://api.paystack.co/customer exactly.
+// Auth: Bearer sk_test_xxx
+type CustomerNamespace struct {
 	client *Client
 }
 
-// Create creates a new customer under the merchant account.
-func (s *CustomerService) Create(ctx context.Context, input CreateCustomerInput) (*Customer, error) {
+// Create creates a new customer.
+func (n *CustomerNamespace) Create(ctx context.Context, input CreateCustomerInput) (*Customer, error) {
 	var out Customer
-	if err := s.client.do(ctx, http.MethodPost, "/api/v1/customer", input, &out); err != nil {
+	if err := n.client.do(ctx, http.MethodPost, "/customer", input, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 // List returns a paginated list of customers.
-func (s *CustomerService) List(ctx context.Context, opts ListOptions) (*CustomerList, error) {
+func (n *CustomerNamespace) List(ctx context.Context, opts ListOptions) (*CustomerList, error) {
+	path := fmt.Sprintf("/customer?page=%d&perPage=%d",
+		pageOrDefault(opts.Page), perPageOrDefault(opts.PerPage))
 	var out CustomerList
-	path := fmt.Sprintf("/api/v1/customer?page=%d&per_page=%d", pageOrDefault(opts.Page), perPageOrDefault(opts.PerPage))
-	if err := s.client.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+	if err := n.client.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-// Get retrieves a customer by their code (CUS_xxxxxxxx).
-func (s *CustomerService) Get(ctx context.Context, code string) (*Customer, error) {
+// Fetch retrieves a customer by their code (CUS_xxxxxxxx).
+func (n *CustomerNamespace) Fetch(ctx context.Context, code string) (*Customer, error) {
 	var out Customer
-	if err := s.client.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/customer/%s", code), nil, &out); err != nil {
+	if err := n.client.do(ctx, http.MethodGet, "/customer/"+code, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-// Update partially updates a customer record.
-// Only non-nil fields are updated.
-func (s *CustomerService) Update(ctx context.Context, code string, input UpdateCustomerInput) (*Customer, error) {
+// Update partially updates a customer. Only non-nil pointer fields are updated.
+func (n *CustomerNamespace) Update(ctx context.Context, code string, input UpdateCustomerInput) (*Customer, error) {
 	var out Customer
-	if err := s.client.do(ctx, http.MethodPut, fmt.Sprintf("/api/v1/customer/%s", code), input, &out); err != nil {
+	if err := n.client.do(ctx, http.MethodPut, "/customer/"+code, input, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 // Transactions returns paginated transactions for a customer.
-func (s *CustomerService) Transactions(ctx context.Context, code string, opts ListOptions) (*TransactionList, error) {
-	var out TransactionList
-	path := fmt.Sprintf("/api/v1/customer/%s/transactions?page=%d&per_page=%d",
+func (n *CustomerNamespace) Transactions(ctx context.Context, code string, opts ListOptions) (*TransactionList, error) {
+	path := fmt.Sprintf("/customer/%s/transactions?page=%d&perPage=%d",
 		code, pageOrDefault(opts.Page), perPageOrDefault(opts.PerPage))
-	if err := s.client.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+	var out TransactionList
+	if err := n.client.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

@@ -10,50 +10,48 @@ import (
 	"time"
 )
 
-const defaultBaseURL = "http://localhost:8080"
+const defaultBaseURL = "https://api.payfake.co"
 
 // Client is the root Payfake SDK client.
-// All API namespaces hang off this struct, callers access them
-// via client.Transaction, client.Charge, client.Customer etc.
-// This mirrors how official SDKs (Stripe, Paystack) are structured
-// one client, multiple namespaces, no global state.
+// All API namespaces hang off this struct.
+//
+//	client := payfake.New(payfake.Config{
+//	    SecretKey: "sk_test_xxx",
+//	})
+//
+// For self-hosted instances:
+//
+//	client := payfake.New(payfake.Config{
+//	    SecretKey: "sk_test_xxx",
+//	    BaseURL:   "http://localhost:8080",
+//	})
 type Client struct {
 	baseURL    string
 	secretKey  string
 	httpClient *http.Client
 
-	// Namespace services, each wraps a slice of related API endpoints.
-	Auth        *AuthService
-	Transaction *TransactionService
-	Charge      *ChargeService
-	Customer    *CustomerService
-	Control     *ControlService
+	// Namespaces
+	Auth        *AuthNamespace
+	Transaction *TransactionNamespace
+	Charge      *ChargeNamespace
+	Customer    *CustomerNamespace
+	Merchant    *MerchantNamespace
+	Control     *ControlNamespace
 }
 
-// Config holds the configuration for the SDK client.
+// Config holds the client configuration.
 type Config struct {
-	// SecretKey is the merchant's sk_test_ key.
-	// Required for all API calls.
+	// SecretKey is the merchant's sk_test_xxx key.
+	// Required for all Paystack-compatible endpoints.
 	SecretKey string
-	// BaseURL is the Payfake server URL.
-	// Defaults to http://localhost:8080 if not set.
-	// Override this if you're running Payfake on a different port
-	// or have deployed it to a server.
+	// BaseURL defaults to https://api.payfake.co.
+	// Override for self-hosted: "http://localhost:8080"
 	BaseURL string
-	// Timeout is the HTTP client timeout.
-	// Defaults to 30 seconds if not set.
+	// Timeout defaults to 30 seconds.
 	Timeout time.Duration
 }
 
 // New creates a new Payfake SDK client.
-// This is the only constructor, all fields have sensible defaults
-// so the minimum viable setup is just a secret key.
-//
-// Example:
-//
-//	client := payfake.New(payfake.Config{
-//	    SecretKey: "sk_test_xxx",
-//	})
 func New(cfg Config) *Client {
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
@@ -62,9 +60,6 @@ func New(cfg Config) *Client {
 
 	timeout := cfg.Timeout
 	if timeout == 0 {
-		// 30 seconds covers MoMo async resolution delays
-		// MoMo charges can take up to the configured delay_ms
-		// before the webhook fires. Card charges are near-instant.
 		timeout = 30 * time.Second
 	}
 
@@ -76,157 +71,127 @@ func New(cfg Config) *Client {
 		},
 	}
 
-	// Wire up namespace services, each gets a reference to the
-	// parent client so they can call c.do() for HTTP requests.
-	c.Auth = &AuthService{client: c}
-	c.Transaction = &TransactionService{client: c}
-	c.Charge = &ChargeService{client: c}
-	c.Customer = &CustomerService{client: c}
-	c.Control = &ControlService{client: c}
+	c.Auth = &AuthNamespace{client: c}
+	c.Transaction = &TransactionNamespace{client: c}
+	c.Charge = &ChargeNamespace{client: c}
+	c.Customer = &CustomerNamespace{client: c}
+	c.Merchant = &MerchantNamespace{client: c}
+	c.Control = &ControlNamespace{client: c}
 
 	return c
 }
 
-// do is the single HTTP execution method for the entire SDK.
-// Every namespace method builds a request and calls this.
-// Centralizing HTTP here means auth headers, error parsing,
-// and response unwrapping happen exactly once, not scattered
-// across 27 different endpoint methods.
-func (c *Client) do(ctx context.Context, method, path string, body any, target any) error {
-	// Serialize the request body to JSON if one was provided.
-	var bodyReader io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("failed to marshal request body: %w", err)
-		}
-		bodyReader = bytes.NewBuffer(b)
-	}
-
-	url := fmt.Sprintf("%s%s", c.baseURL, path)
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	// Attach the secret key as a Bearer token, same as calling
-	// the API directly. The SDK doesn't change the auth scheme.
-	if c.secretKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.secretKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Parse the Payfake envelope regardless of status code.
-	// We need the envelope to extract the error code and message
-	// even on failure, raw HTTP status codes alone aren't enough.
-	var envelope apiResponse
-	if err := json.Unmarshal(respBytes, &envelope); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	// Any non-success status means the API returned an error envelope.
-	// We convert it to an SDKError so callers get typed error handling.
-	if envelope.Status != "success" {
-		return &SDKError{
-			Code:       envelope.Code,
-			Message:    envelope.Message,
-			Fields:     envelope.Errors,
-			HTTPStatus: resp.StatusCode,
-		}
-	}
-
-	// Success, unmarshal the data field into the target struct.
-	// We re-marshal just the data field and unmarshal into target
-	// because envelope.Data is any, we need the concrete type.
-	if target != nil && envelope.Data != nil {
-		dataBytes, err := json.Marshal(envelope.Data)
-		if err != nil {
-			return fmt.Errorf("failed to re-marshal data: %w", err)
-		}
-		if err := json.Unmarshal(dataBytes, target); err != nil {
-			return fmt.Errorf("failed to unmarshal data into target: %w", err)
-		}
-	}
-
-	return nil
+// do executes an HTTP request authenticated with the secret key.
+// Used for all Paystack-compatible endpoints (/transaction, /charge, /customer).
+func (c *Client) do(ctx context.Context, method, path string, body, target any) error {
+	return c.request(ctx, method, path, body, target, c.secretKey)
 }
 
-// doWithJWT executes a request using a JWT token instead of the secret key.
-// Rather than mutating the client's secretKey (which is not thread-safe),
-// we build the request manually with the token injected directly.
-// This means concurrent requests, one using secretKey, one using JWT —
-// never race on the same field.
-func (c *Client) doWithJWT(ctx context.Context, method, path string, body any, target any, token string) error {
+// doWithJWT executes an HTTP request authenticated with a JWT token.
+// Used for Payfake-specific endpoints (/api/v1/auth, /api/v1/control, /api/v1/merchant).
+func (c *Client) doWithJWT(ctx context.Context, method, path string, body, target any, token string) error {
+	return c.request(ctx, method, path, body, target, token)
+}
+
+// doPublic executes an unauthenticated HTTP request.
+// Used for public checkout endpoints (/api/v1/public/*).
+func (c *Client) doPublic(ctx context.Context, method, path string, body, target any) error {
+	return c.request(ctx, method, path, body, target, "")
+}
+
+func (c *Client) request(ctx context.Context, method, path string, body, target any, token string) error {
 	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("failed to marshal request body: %w", err)
+			return fmt.Errorf("payfake: marshal request body: %w", err)
 		}
 		bodyReader = bytes.NewBuffer(b)
 	}
 
-	url := fmt.Sprintf("%s%s", c.baseURL, path)
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bodyReader)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return fmt.Errorf("payfake: create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	// Inject the JWT token directly, never touches c.secretKey.
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return fmt.Errorf("payfake: execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
+		return fmt.Errorf("payfake: read response body: %w", err)
 	}
 
-	var envelope apiResponse
-	if err := json.Unmarshal(respBytes, &envelope); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+	var env envelope
+	if err := json.Unmarshal(respBytes, &env); err != nil {
+		return fmt.Errorf("payfake: parse response (status %d): %w", resp.StatusCode, err)
 	}
 
-	if envelope.Status != "success" {
+	// status is a boolean in the Paystack/Payfake envelope.
+	// false means the API returned an error regardless of HTTP status code.
+	if !env.Status {
+		// Flatten the errors map into our ErrorField slice.
+		var fields []ErrorField
+		for fieldName, rules := range env.Errors {
+			for _, rule := range rules {
+				fields = append(fields, ErrorField{
+					Field:   fieldName,
+					Rule:    rule.Rule,
+					Message: rule.Message,
+				})
+			}
+		}
+		// Error code travels in the X-Payfake-Code header, not the body.
+		// This keeps the body 100% Paystack-compatible.
 		return &SDKError{
-			Code:       envelope.Code,
-			Message:    envelope.Message,
-			Fields:     envelope.Errors,
+			Code:       resp.Header.Get("X-Payfake-Code"),
+			Message:    env.Message,
+			Fields:     fields,
 			HTTPStatus: resp.StatusCode,
 		}
 	}
 
-	if target != nil && envelope.Data != nil {
-		dataBytes, err := json.Marshal(envelope.Data)
+	if target != nil && env.Data != nil {
+		// Re-marshal the data field and unmarshal into the typed target.
+		// envelope.Data is any{} so we need this round-trip to get
+		// the concrete type the caller expects.
+		dataBytes, err := json.Marshal(env.Data)
 		if err != nil {
-			return fmt.Errorf("failed to re-marshal data: %w", err)
+			return fmt.Errorf("payfake: re-marshal data: %w", err)
 		}
 		if err := json.Unmarshal(dataBytes, target); err != nil {
-			return fmt.Errorf("failed to unmarshal data into target: %w", err)
+			return fmt.Errorf("payfake: unmarshal data into target: %w", err)
 		}
 	}
 
 	return nil
+}
+
+// helpers
+
+func pageOrDefault(page int) int {
+	if page < 1 {
+		return 1
+	}
+	return page
+}
+
+func perPageOrDefault(perPage int) int {
+	if perPage < 1 {
+		return 50
+	}
+	if perPage > 100 {
+		return 100
+	}
+	return perPage
 }
