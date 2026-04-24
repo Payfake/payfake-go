@@ -168,30 +168,27 @@ type BankDetails struct {
 // ChargeCardInput is the body for a card charge.
 // Channel is inferred from the presence of the card object.
 type ChargeCardInput struct {
-	Email      string       `json:"email"`
-	Amount     int64        `json:"amount,omitempty"`
-	AccessCode string       `json:"access_code,omitempty"`
-	Reference  string       `json:"reference,omitempty"`
-	Card       *CardDetails `json:"card"`
+	Email     string       `json:"email"`
+	Amount    int64        `json:"amount,omitempty"`
+	Reference string       `json:"reference,omitempty"`
+	Card      *CardDetails `json:"card"`
 }
 
 // ChargeMomoInput is the body for a mobile money charge.
 type ChargeMomoInput struct {
 	Email       string       `json:"email"`
 	Amount      int64        `json:"amount,omitempty"`
-	AccessCode  string       `json:"access_code,omitempty"`
 	Reference   string       `json:"reference,omitempty"`
 	MobileMoney *MomoDetails `json:"mobile_money"`
 }
 
 // ChargeBankInput is the body for a bank transfer charge.
 type ChargeBankInput struct {
-	Email      string       `json:"email"`
-	Amount     int64        `json:"amount,omitempty"`
-	AccessCode string       `json:"access_code,omitempty"`
-	Reference  string       `json:"reference,omitempty"`
-	Bank       *BankDetails `json:"bank"`
-	Birthday   string       `json:"birthday,omitempty"`
+	Email     string       `json:"email"`
+	Amount    int64        `json:"amount,omitempty"`
+	Reference string       `json:"reference,omitempty"`
+	Bank      *BankDetails `json:"bank"`
+	Birthday  string       `json:"birthday,omitempty"`
 }
 
 // ChargeFlowResponse is returned by every charge step endpoint.

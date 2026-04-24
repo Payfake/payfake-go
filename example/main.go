@@ -15,7 +15,7 @@ func main() {
 	// To use your own server: BaseURL: "http://localhost:8080"
 	client := payfake.New(payfake.Config{
 		SecretKey: "sk_test_your_key_here",
-		BaseURL:   "https://api.payfake.co",
+		BaseURL:   "http://localhost:8080",
 	})
 
 	ctx := context.Background()
@@ -58,7 +58,7 @@ func main() {
 	// Configure the client with the secret key
 	client = payfake.New(payfake.Config{
 		SecretKey: keys.SecretKey,
-		BaseURL:   "https://api.payfake.co",
+		BaseURL:   "http://localhost:8080", //https://api.payfake.co
 	})
 
 	// Initialize a transaction
@@ -66,6 +66,7 @@ func main() {
 		Email:    "customer@example.com",
 		Amount:   10000, // GHS 100.00 — amounts are in the smallest unit (pesewas)
 		Currency: "GHS",
+		// CallbackURL: "http://localhost:5173",
 	})
 	if err != nil {
 		log.Fatalf("initialize failed: %v", err)
@@ -77,13 +78,12 @@ func main() {
 	//  Full local Verve card flow
 	fmt.Println("\n── Card flow (local Verve) ──")
 
-	// Step 1: Initiate
-	// 5061xxxxxx = local Ghana Verve card → send_pin
-	// 4111xxxxxx = international Visa card → open_url (3DS)
+	// // Step 1: Initiate
+	// // 5061xxxxxx = local Ghana Verve card → send_pin
+	// // 4111xxxxxx = international Visa card → open_url (3DS)
 	step1, err := client.Charge.Card(ctx, payfake.ChargeCardInput{
-		Email:      "customer@example.com",
-		AccessCode: tx.AccessCode,
-		Reference:  tx.Reference,
+		Email:     "customer@example.com",
+		Reference: tx.Reference,
 		Card: &payfake.CardDetails{
 			Number:      "5061000000000000",
 			CVV:         "123",
@@ -149,9 +149,8 @@ func main() {
 	})
 
 	momo1, err := client.Charge.MobileMoney(ctx, payfake.ChargeMomoInput{
-		Email:      "momo@example.com",
-		AccessCode: tx2.AccessCode,
-		Reference:  tx2.Reference,
+		Email:     "momo@example.com",
+		Reference: tx2.Reference,
 		MobileMoney: &payfake.MomoDetails{
 			Phone:    "+233241234567",
 			Provider: "mtn",
@@ -173,7 +172,7 @@ func main() {
 	// Poll until resolved
 	fmt.Println("Polling for MoMo resolution...")
 	for i := 0; i < 10; i++ {
-		result, err := client.Transaction.PublicVerify(ctx, tx2.Reference)
+		result, err := client.Transaction.PublicVerify(ctx, tx2.Reference, tx2.AccessCode)
 		if err != nil {
 			break
 		}
@@ -212,10 +211,10 @@ func main() {
 		Email:  "fail@example.com",
 		Amount: 10000,
 	})
+
 	_, err = client.Charge.Card(ctx, payfake.ChargeCardInput{
-		Email:      "fail@example.com",
-		AccessCode: tx3.AccessCode,
-		Reference:  tx3.Reference,
+		Email:     "fail@example.com",
+		Reference: tx3.Reference,
 		Card: &payfake.CardDetails{
 			Number:      "5061000000000000",
 			CVV:         "123",
@@ -223,6 +222,7 @@ func main() {
 			ExpiryYear:  "2026",
 		},
 	})
+
 	if err != nil {
 		fmt.Println("Charge failed as expected:", err)
 		if payfake.IsCode(err, payfake.CodeInsufficientFunds) {
@@ -230,14 +230,14 @@ func main() {
 		}
 	}
 
-	// Reset when done
+	// // Reset when done
 	_, err = client.Control.ResetScenario(ctx, token)
 	if err != nil {
 		log.Fatalf("reset scenario failed: %v", err)
 	}
 	fmt.Println("Scenario reset — charges will succeed again")
 
-	//  Stats
+	// //  Stats
 	stats, err := client.Control.GetStats(ctx, token)
 	if err != nil {
 		log.Fatalf("get stats failed: %v", err)

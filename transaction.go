@@ -90,16 +90,29 @@ func (n *TransactionNamespace) PublicFetch(ctx context.Context, accessCode strin
 // "success" or "failed".
 //
 //	for {
-//	    result, _ := client.Transaction.PublicVerify(ctx, reference)
+//	    result, _ := client.Transaction.PublicVerify(ctx, reference, accessCode)
 //	    if result.Status == "success" || result.Status == "failed" {
 //	        break
 //	    }
 //	    time.Sleep(3 * time.Second)
 //	}
-func (n *TransactionNamespace) PublicVerify(ctx context.Context, reference string) (*PublicVerifyResponse, error) {
+func (n *TransactionNamespace) PublicVerify(
+	ctx context.Context,
+	reference string,
+	accessCode string,
+) (*PublicVerifyResponse, error) {
+
 	var out PublicVerifyResponse
-	if err := n.client.doPublic(ctx, http.MethodGet, "/api/v1/public/transaction/verify/"+reference, nil, &out); err != nil {
+
+	path := fmt.Sprintf(
+		"/api/v1/public/transaction/verify/%s?access_code=%s",
+		reference,
+		accessCode,
+	)
+
+	if err := n.client.doPublic(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
+
 	return &out, nil
 }
